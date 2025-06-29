@@ -7,13 +7,16 @@ import pytz
 from langchain_community.chat_models import ChatHuggingFace
 from langchain.schema import HumanMessage
 import os
+import json
 
 # --- Google Calendar ---
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 SERVICE_ACCOUNT_FILE = "service_account.json"  # Path to your file
 
-credentials = service_account.Credentials.from_service_account_file(
-    SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+SERVICE_ACCOUNT_INFO = json.loads(os.getenv("SERVICE_ACCOUNT_JSON"))
+credentials = service_account.Credentials.from_service_account_info(
+    SERVICE_ACCOUNT_INFO, scopes=SCOPES
+)
 calendar_service = build('calendar', 'v3', credentials=credentials)
 calendar_id = 'primary'
 
