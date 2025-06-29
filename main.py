@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 import pytz
 import re
 
-from langchain_huggingface import HuggingFaceHubChat
+from langchain_community.llms import HuggingFaceHub
 
 # --- GOOGLE CALENDAR SETUP ---
 SCOPES = ['https://www.googleapis.com/auth/calendar']
