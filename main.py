@@ -31,10 +31,12 @@ app = FastAPI()
 
 # --- HELPER FUNCTIONS ---
 def search_slots(start_time, end_time):
+    time_min = start_time.replace(microsecond=0).isoformat() + "Z"
+    time_max = end_time.replace(microsecond=0).isoformat() + "Z"
     events_result = calendar_service.events().list(
         calendarId=calendar_id,
-        timeMin=start_time.isoformat(),
-        timeMax=end_time.isoformat(),
+        timeMin=time_min,
+        timeMax=time_max,
         singleEvents=True,
         orderBy='startTime'
     ).execute()
