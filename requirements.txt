@@ -7,6 +7,5 @@ google-auth-oauthlib
 pytz
 dateparser
 langchain
-langchain-community
-huggingface-hub==0.16.4
-huggingface_hub
+langchain-core
+huggingface-hub
