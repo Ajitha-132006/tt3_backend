@@ -7,9 +7,11 @@ from fastapi import FastAPI, Request
 from googleapiclient.discovery import build
 from google.oauth2 import service_account
 import dateparser
+
 from huggingface_hub import InferenceClient
 from langchain_core.language_models import LLM
 from langchain_core.outputs import Generation, LLMResult
+from pydantic import PrivateAttr
 
 # --- GOOGLE CALENDAR SETUP ---
 SCOPES = ['https://www.googleapis.com/auth/calendar']
@@ -25,8 +27,12 @@ app = FastAPI()
 
 # --- CUSTOM LANGCHAIN LLM ---
 class HuggingFaceCustomLLM(LLM):
-    def __init__(self, repo_id: str, token: str):
-        self.client = InferenceClient(token=token)
+    repo_id: str
+    _client: InferenceClient = PrivateAttr()
+
+    def __init__(self, repo_id: str, token: str, **kwargs):
+        super().__init__(repo_id=repo_id, **kwargs)
+        self._client = InferenceClient(token=token)
         self.repo_id = repo_id
 
     @property
@@ -34,7 +40,7 @@ class HuggingFaceCustomLLM(LLM):
         return "huggingface_custom"
 
     def _call(self, prompt: str, stop=None, run_manager=None, **kwargs) -> str:
-        response = self.client.text_generation(
+        response = self._client.text_generation(
             repo_id=self.repo_id,
             prompt=prompt,
             max_new_tokens=200
@@ -48,13 +54,13 @@ class HuggingFaceCustomLLM(LLM):
             generations.append([Generation(text=text)])
         return LLMResult(generations=generations)
 
-# --- Instantiate your LLM ---
+# --- Instantiate LLM ---
 llm = HuggingFaceCustomLLM(
     repo_id="HuggingFaceH4/zephyr-7b-beta",
     token=os.getenv("HUGGINGFACEHUB_API_TOKEN")
 )
 
-# --- Calendar helpers ---
+# --- Helpers ---
 def search_slots(start_time, end_time):
     time_min = start_time.isoformat()
     time_max = end_time.isoformat()
