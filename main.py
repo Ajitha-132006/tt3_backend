@@ -57,17 +57,24 @@ def create_event(start_time, end_time, summary="Meeting"):
     return created_event.get('htmlLink')
 
 def parse_time_input(text):
+    now = datetime.utcnow()
+    
     if "tomorrow" in text:
-        start = datetime.utcnow() + timedelta(days=1, hours=15)
+        target_date = now + timedelta(days=1)
+        start = datetime(target_date.year, target_date.month, target_date.day, 15, 0, 0, tzinfo=pytz.UTC)
     elif "next week" in text:
-        start = datetime.utcnow() + timedelta(days=7, hours=15)
+        target_date = now + timedelta(days=7)
+        start = datetime(target_date.year, target_date.month, target_date.day, 15, 0, 0, tzinfo=pytz.UTC)
     elif "friday" in text:
-        today = datetime.utcnow()
-        days_ahead = (4 - today.weekday()) % 7
+        days_ahead = (4 - now.weekday()) % 7
         days_ahead = 7 if days_ahead == 0 else days_ahead
-        start = today + timedelta(days=days_ahead, hours=15)
+        target_date = now + timedelta(days=days_ahead)
+        start = datetime(target_date.year, target_date.month, target_date.day, 15, 0, 0, tzinfo=pytz.UTC)
     else:
-        start = datetime.utcnow() + timedelta(days=1, hours=15)
+        # Default: tomorrow at 3 PM UTC
+        target_date = now + timedelta(days=1)
+        start = datetime(target_date.year, target_date.month, target_date.day, 15, 0, 0, tzinfo=pytz.UTC)
+    
     end = start + timedelta(hours=1)
     return start, end
 
