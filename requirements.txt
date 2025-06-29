@@ -9,3 +9,4 @@ google-auth-oauthlib
 pytz
 dateparser
 openai
+huggingface_hub
