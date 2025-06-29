@@ -18,7 +18,7 @@ credentials = service_account.Credentials.from_service_account_info(
     SERVICE_ACCOUNT_INFO, scopes=SCOPES
 )
 calendar_service = build('calendar', 'v3', credentials=credentials)
-calendar_id = 'primary'
+calendar_id = 'chalasaniajitha@gmail.com'
 
 # --- LLM SETUP ---
 llm = HuggingFaceHub(
@@ -88,7 +88,7 @@ def handle_chat(user_input):
         return llm_reply
 
 # --- API ROUTES ---
-@app.post("/chat")
+@app.post("/")
 async def chat_api(req: Request):
     data = await req.json()
     user_message = data.get("message", "")
