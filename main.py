@@ -1,6 +1,5 @@
 import os
 import json
-import re
 from datetime import datetime, timedelta
 import pytz
 
@@ -8,7 +7,9 @@ from fastapi import FastAPI, Request
 from googleapiclient.discovery import build
 from google.oauth2 import service_account
 import dateparser
-from langchain_community.llms import HuggingFaceHub
+from huggingface_hub import InferenceClient
+from langchain_core.language_models import LLM
+from langchain_core.outputs import Generation, LLMResult
 
 # --- GOOGLE CALENDAR SETUP ---
 SCOPES = ['https://www.googleapis.com/auth/calendar']
@@ -17,18 +18,38 @@ credentials = service_account.Credentials.from_service_account_info(
     SERVICE_ACCOUNT_INFO, scopes=SCOPES
 )
 calendar_service = build('calendar', 'v3', credentials=credentials)
-calendar_id = 'chalasaniajitha@gmail.com'
+calendar_id = 'chalasaniajitha@gmail.com'  # Replace with your calendar ID
 
-# --- LLM SETUP ---
-llm = HuggingFaceHub(
-    repo_id="HuggingFaceH4/zephyr-7b-beta",
-    huggingfacehub_api_token=os.getenv("HUGGINGFACEHUB_API_TOKEN")
-)
-
-# --- FASTAPI APP ---
+# --- FASTAPI ---
 app = FastAPI()
 
-# --- HELPER FUNCTIONS ---
+# --- CUSTOM LANGCHAIN LLM ---
+class HuggingFaceCustomLLM(LLM):
+    def __init__(self, repo_id: str, token: str):
+        self.client = InferenceClient(repo_id=repo_id, token=token)
+
+    @property
+    def _llm_type(self) -> str:
+        return "huggingface_custom"
+
+    def _call(self, prompt: str, stop=None, run_manager=None, **kwargs) -> str:
+        response = self.client.text_generation(prompt=prompt, max_new_tokens=200)
+        return response.strip()
+
+    def generate(self, prompts, stop=None, **kwargs) -> LLMResult:
+        generations = []
+        for prompt in prompts:
+            text = self._call(prompt, stop=stop, **kwargs)
+            generations.append([Generation(text=text)])
+        return LLMResult(generations=generations)
+
+# --- Instantiate your LLM ---
+llm = HuggingFaceCustomLLM(
+    repo_id="HuggingFaceH4/zephyr-7b-beta",
+    token=os.getenv("HUGGINGFACEHUB_API_TOKEN")
+)
+
+# --- Calendar helpers ---
 def search_slots(start_time, end_time):
     time_min = start_time.isoformat()
     time_max = end_time.isoformat()
@@ -63,8 +84,9 @@ def llm_extract_event_info(user_input):
         "Return JSON: {\"intent\": \"book_event/check_availability/other\", \"title\": \"...\", \"datetime_phrase\": \"...\"}. "
         "If not clear, use sensible defaults."
     )
-    combined_input = f"{system_prompt}\nUser: {user_input}"
-    reply = llm.invoke(combined_input)
+    prompt = f"{system_prompt}\nUser: {user_input}"
+    result = llm.generate([prompt])
+    reply = result.generations[0][0].text
     try:
         info = json.loads(reply)
         return info
@@ -96,17 +118,18 @@ def handle_chat(user_input):
             return f"You're busy at that time. How about {suggestion}?"
         else:
             link = create_event(start.isoformat(), end.isoformat(), summary=title)
-            # Format clean short link
             return f"{title.capitalize()} booked! [View here]({link})"
-    
+
     elif intent == "check_availability":
         suggestion = suggest_slot()
         return f"You're free at {suggestion}. Shall I book it?"
-    
-    else:
-        return llm.invoke(user_input)
 
-# --- API ROUTES ---
+    else:
+        # fallback to LLM chat reply
+        result = llm.generate([user_input])
+        return result.generations[0][0].text.strip()
+
+# --- ROUTES ---
 @app.post("/")
 async def chat_api(req: Request):
     data = await req.json()
