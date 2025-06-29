@@ -1,12 +1,12 @@
 fastapi
 uvicorn
-langchain
-langchain_community
 google-api-python-client
 google-auth
 google-auth-httplib2
 google-auth-oauthlib
 pytz
 dateparser
-openai
+langchain
+langchain-community
+huggingface-hub==0.16.4
 huggingface_hub
