@@ -26,14 +26,19 @@ app = FastAPI()
 # --- CUSTOM LANGCHAIN LLM ---
 class HuggingFaceCustomLLM(LLM):
     def __init__(self, repo_id: str, token: str):
-        self.client = InferenceClient(repo_id=repo_id, token=token)
+        self.client = InferenceClient(token=token)
+        self.repo_id = repo_id
 
     @property
     def _llm_type(self) -> str:
         return "huggingface_custom"
 
     def _call(self, prompt: str, stop=None, run_manager=None, **kwargs) -> str:
-        response = self.client.text_generation(prompt=prompt, max_new_tokens=200)
+        response = self.client.text_generation(
+            repo_id=self.repo_id,
+            prompt=prompt,
+            max_new_tokens=200
+        )
         return response.strip()
 
     def generate(self, prompts, stop=None, **kwargs) -> LLMResult:
