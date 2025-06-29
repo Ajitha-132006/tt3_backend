@@ -7,14 +7,13 @@ import pytz
 from fastapi import FastAPI, Request
 from googleapiclient.discovery import build
 from google.oauth2 import service_account
-from langchain.llms import HuggingFaceHub
+from langchain_community.llms import HuggingFaceHub
+from dateparser.search import search_dates
 
 # --- GOOGLE CALENDAR SETUP ---
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 SERVICE_ACCOUNT_INFO = json.loads(os.getenv("SERVICE_ACCOUNT_JSON"))
-credentials = service_account.Credentials.from_service_account_info(
-    SERVICE_ACCOUNT_INFO, scopes=SCOPES
-)
+credentials = service_account.Credentials.from_service_account_info(SERVICE_ACCOUNT_INFO, scopes=SCOPES)
 calendar_service = build('calendar', 'v3', credentials=credentials)
 calendar_id = 'chalasaniajitha@gmail.com'
 
@@ -27,78 +26,83 @@ llm = HuggingFaceHub(
 # --- FASTAPI APP ---
 app = FastAPI()
 
-# --- HELPER FUNCTIONS ---
-def search_slots(start_time, end_time):
-    time_min = start_time.astimezone(pytz.UTC).replace(microsecond=0).isoformat()
-    time_max = end_time.astimezone(pytz.UTC).replace(microsecond=0).isoformat()
-    events_result = calendar_service.events().list(
+# --- HELPERS ---
+def check_availability(start_time, end_time):
+    time_min = start_time.isoformat()
+    time_max = end_time.isoformat()
+    events = calendar_service.events().list(
         calendarId=calendar_id,
         timeMin=time_min,
         timeMax=time_max,
         singleEvents=True,
         orderBy='startTime'
-    ).execute()
-    return events_result.get('items', [])
+    ).execute().get('items', [])
+    return len(events) == 0
 
-def suggest_slot():
-    tomorrow = datetime.utcnow().date() + timedelta(days=1)
-    suggested = datetime.combine(tomorrow, datetime.min.time()).replace(
-        hour=15, minute=0, second=0, tzinfo=pytz.UTC
-    )
-    return suggested.isoformat()
-
-def create_event(start_time, end_time, summary="Meeting"):
+def create_event(summary, start_time, end_time):
     event = {
         'summary': summary,
-        'start': {'dateTime': start_time, 'timeZone': 'UTC'},
-        'end': {'dateTime': end_time, 'timeZone': 'UTC'}
+        'start': {'dateTime': start_time.isoformat(), 'timeZone': 'Asia/Kolkata'},
+        'end': {'dateTime': end_time.isoformat(), 'timeZone': 'Asia/Kolkata'}
     }
-    created_event = calendar_service.events().insert(calendarId=calendar_id, body=event).execute()
-    link = created_event.get('htmlLink')
-    return f"Meeting booked! <a href='{link}' target='_blank'>View here</a>"
+    created = calendar_service.events().insert(calendarId=calendar_id, body=event).execute()
+    return created.get('htmlLink')
 
-def parse_time_input(text):
-    now = datetime.utcnow()
-    text_lower = text.lower()
-
-    if "tomorrow" in text_lower:
-        target_date = now.date() + timedelta(days=1)
-    elif "next week" in text_lower:
-        target_date = now.date() + timedelta(days=7)
-    elif "monday" in text_lower:
-        days_ahead = (0 - now.weekday() + 7) % 7
-        days_ahead = days_ahead if days_ahead != 0 else 7
-        target_date = now.date() + timedelta(days=days_ahead)
-    else:
-        target_date = now.date() + timedelta(days=1)
-
-    hour = 10 if "10" in text_lower else 15
-    start = datetime.combine(target_date, datetime.min.time()).replace(
-        hour=hour, minute=0, second=0, tzinfo=pytz.UTC
+def detect_event_type(user_input):
+    prompt = (
+        f"From this request: '{user_input}', what should be the title of the calendar event? "
+        f"Return a short phrase like 'Team Meeting', 'Lunch with Raj', etc. If unclear, return 'General Event'."
     )
-    end = start + timedelta(hours=1)
-    return start, end
+    title = llm.invoke(prompt).strip()
+    return title if title else "General Event"
 
+def parse_time(user_input):
+    result = search_dates(
+        user_input,
+        settings={
+            'PREFER_DATES_FROM': 'future',
+            'RETURN_AS_TIMEZONE_AWARE': True,
+            'TIMEZONE': 'Asia/Kolkata',
+            'RELATIVE_BASE': datetime.now(pytz.timezone('Asia/Kolkata'))
+        }
+    )
+    if result:
+        dt = result[0][1]
+        if dt.tzinfo is None:
+            dt = pytz.timezone('Asia/Kolkata').localize(dt)
+        return dt
+    return None
+
+# --- MAIN HANDLER ---
 def handle_chat(user_input):
-    if re.search(r'book|schedule|meeting|appointment', user_input, re.I):
-        start, end = parse_time_input(user_input)
-        existing = search_slots(start, end)
-        if existing:
-            suggestion = suggest_slot()
-            return f"You're busy then. How about {suggestion}?"
-        else:
-            return create_event(start.isoformat(), end.isoformat())
-    elif re.search(r'free|available|slot', user_input, re.I):
-        suggestion = suggest_slot()
-        return f"You're free at {suggestion}. Shall I book it?"
-    else:
-        llm_reply = llm.invoke(user_input)
-        return llm_reply
+    event_type = detect_event_type(user_input)
+    start = parse_time(user_input)
 
-# --- API ROUTES ---
+    if not start:
+        return "⚠ I couldn’t understand the date/time. Try something like 'tomorrow at 3 PM'."
+
+    end = start + timedelta(minutes=30)
+
+    if check_availability(start, end):
+        link = create_event(event_type, start, end)
+        return f"✅ Booked **{event_type}** for {start.strftime('%Y-%m-%d %I:%M %p')}. [View in Calendar]({link})"
+    else:
+        # Try suggesting next free slot
+        for i in range(1, 4):
+            alt_start = start + timedelta(hours=i)
+            alt_end = alt_start + timedelta(minutes=30)
+            if check_availability(alt_start, alt_end):
+                return f"❌ Busy at requested time. How about **{alt_start.strftime('%Y-%m-%d %I:%M %p')}**?"
+        return "❌ Busy at requested time and no nearby slots found. Please suggest another time."
+
+# --- API ---
 @app.post("/")
 async def chat_api(req: Request):
     data = await req.json()
-    user_message = data.get("message", "")
-    response = handle_chat(user_message)
-    return {"reply": response}
+    user_msg = data.get("message", "")
+    reply = handle_chat(user_msg)
+    return {"reply": reply}
+
+@app.get("/")
+async def root():
+    return {"message": "Smart Calendar Bot is running!"}
