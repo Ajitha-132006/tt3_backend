@@ -7,12 +7,10 @@ import pytz
 from fastapi import FastAPI, Request
 from googleapiclient.discovery import build
 from google.oauth2 import service_account
-from langchain_community.llms import HuggingFaceHub
+from langchain.llms import HuggingFaceHub
 
 # --- GOOGLE CALENDAR SETUP ---
 SCOPES = ['https://www.googleapis.com/auth/calendar']
-
-# Load service account from environment variable
 SERVICE_ACCOUNT_INFO = json.loads(os.getenv("SERVICE_ACCOUNT_JSON"))
 credentials = service_account.Credentials.from_service_account_info(
     SERVICE_ACCOUNT_INFO, scopes=SCOPES
@@ -57,7 +55,7 @@ def create_event(start_time, end_time, summary="Meeting"):
     }
     created_event = calendar_service.events().insert(calendarId=calendar_id, body=event).execute()
     link = created_event.get('htmlLink')
-    return f"<a href='{link}' target='_blank'>View here</a>"
+    return f"Meeting booked! <a href='{link}' target='_blank'>View here</a>"
 
 def parse_time_input(text):
     now = datetime.utcnow()
@@ -67,15 +65,16 @@ def parse_time_input(text):
         target_date = now.date() + timedelta(days=1)
     elif "next week" in text_lower:
         target_date = now.date() + timedelta(days=7)
-    elif "friday" in text_lower:
-        days_ahead = (4 - now.weekday() + 7) % 7
+    elif "monday" in text_lower:
+        days_ahead = (0 - now.weekday() + 7) % 7
         days_ahead = days_ahead if days_ahead != 0 else 7
         target_date = now.date() + timedelta(days=days_ahead)
     else:
         target_date = now.date() + timedelta(days=1)
 
+    hour = 10 if "10" in text_lower else 15
     start = datetime.combine(target_date, datetime.min.time()).replace(
-        hour=15, minute=0, second=0, tzinfo=pytz.UTC
+        hour=hour, minute=0, second=0, tzinfo=pytz.UTC
     )
     end = start + timedelta(hours=1)
     return start, end
@@ -88,8 +87,7 @@ def handle_chat(user_input):
             suggestion = suggest_slot()
             return f"You're busy then. How about {suggestion}?"
         else:
-            link = create_event(start.isoformat(), end.isoformat())
-            return f"Meeting booked! {link}"
+            return create_event(start.isoformat(), end.isoformat())
     elif re.search(r'free|available|slot', user_input, re.I):
         suggestion = suggest_slot()
         return f"You're free at {suggestion}. Shall I book it?"
@@ -104,7 +102,3 @@ async def chat_api(req: Request):
     user_message = data.get("message", "")
     response = handle_chat(user_message)
     return {"reply": response}
-
-@app.get("/")
-async def root():
-    return {"message": "HuggingFace + Google Calendar bot is running!"}
