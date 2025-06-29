@@ -4,7 +4,7 @@ from googleapiclient.discovery import build
 from google.oauth2 import service_account
 from datetime import datetime, timedelta
 import pytz
-from langchain.chat_models import ChatHuggingFace
+from langchain_community.chat_models import ChatHuggingFace
 from langchain.schema import HumanMessage
 import os
 
