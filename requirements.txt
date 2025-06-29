@@ -9,3 +9,4 @@ dateparser
 langchain
 langchain-core
 huggingface-hub
+langchain_community
