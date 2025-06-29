@@ -32,8 +32,7 @@ class HuggingFaceCustomLLM(LLM):
 
     def __init__(self, repo_id: str, token: str, **kwargs):
         super().__init__(repo_id=repo_id, **kwargs)
-        self._client = InferenceClient(token=token)
-        self.repo_id = repo_id
+        self._client = InferenceClient(model=repo_id, token=token)
 
     @property
     def _llm_type(self) -> str:
@@ -41,7 +40,6 @@ class HuggingFaceCustomLLM(LLM):
 
     def _call(self, prompt: str, stop=None, run_manager=None, **kwargs) -> str:
         response = self._client.text_generation(
-            repo_id=self.repo_id,
             prompt=prompt,
             max_new_tokens=200
         )
