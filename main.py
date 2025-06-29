@@ -1,18 +1,18 @@
 import os
 import json
+import re
+from datetime import datetime, timedelta
+
+import pytz
 from fastapi import FastAPI, Request
 from googleapiclient.discovery import build
 from google.oauth2 import service_account
-from datetime import datetime, timedelta
-import pytz
-import re
-
 from langchain_community.llms import HuggingFaceHub
 
 # --- GOOGLE CALENDAR SETUP ---
 SCOPES = ['https://www.googleapis.com/auth/calendar']
 
-# Load service account from env variable
+# Load service account from environment variable
 SERVICE_ACCOUNT_INFO = json.loads(os.getenv("SERVICE_ACCOUNT_JSON"))
 credentials = service_account.Credentials.from_service_account_info(
     SERVICE_ACCOUNT_INFO, scopes=SCOPES
@@ -20,14 +20,14 @@ credentials = service_account.Credentials.from_service_account_info(
 calendar_service = build('calendar', 'v3', credentials=credentials)
 calendar_id = 'primary'
 
-# --- FASTAPI SETUP ---
-app = FastAPI()
-
 # --- LLM SETUP ---
-llm = HuggingFaceHubChat(
+llm = HuggingFaceHub(
     repo_id="HuggingFaceH4/zephyr-7b-beta",
     huggingfacehub_api_token=os.getenv("HUGGINGFACEHUB_API_TOKEN")
 )
+
+# --- FASTAPI APP ---
+app = FastAPI()
 
 # --- HELPER FUNCTIONS ---
 def search_slots(start_time, end_time):
@@ -83,12 +83,18 @@ def handle_chat(user_input):
         suggestion = suggest_slot()
         return f"You're free at {suggestion}. Shall I book it?"
     else:
-        return "Can you please specify a date or time for the appointment?"
+        # Let LLM handle vague inputs
+        llm_reply = llm.invoke(user_input)
+        return llm_reply
 
-# --- FASTAPI ROUTE ---
+# --- API ROUTES ---
 @app.post("/chat")
 async def chat_api(req: Request):
     data = await req.json()
     user_message = data.get("message", "")
     response = handle_chat(user_message)
     return {"reply": response}
+
+@app.get("/")
+async def root():
+    return {"message": "HuggingFace + Google Calendar bot is running!"}
